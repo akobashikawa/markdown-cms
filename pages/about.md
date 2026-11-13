@@ -36,8 +36,8 @@ A simple CMS (Content Management System) that uses GitHub's infrastructure for d
 ## Development
 
 ```bash
-git clone https://github.com/akobashikawa/github-cms-101.git
-cd github-cms-101
+git clone https://github.com/akobashikawa/markdown-cms.git
+cd markdown-cms
 ```
 
 ## License
@@ -45,4 +45,4 @@ cd github-cms-101
 MIT
 
 
-Github: [akobashikawa/github-cms-101: Idea de CMS usando github](https://github.com/akobashikawa/github-cms-101)
+Github: [akobashikawa/markdown-cms: Idea de CMS usando github](https://github.com/akobashikawa/markdown-cms)

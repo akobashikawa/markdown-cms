@@ -7,7 +7,7 @@ const config = {
     },
     github: {
         owner: 'akobashikawa',
-        repo: 'github-cms-101', // Repo rename pending: change after renaming on GitHub
+        repo: 'markdown-cms',
         token: '', // Se llena desde localStorage con el token guardado
         user: '', // Login de GitHub asociado al token
         tokenExpires: '', // Fecha de expiración informada por GitHub
