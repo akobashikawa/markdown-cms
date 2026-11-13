@@ -1,6 +1,7 @@
 # GitHub CMS 101
 
 A simple CMS (Content Management System) that uses GitHub's infrastructure for deployment and publishing.
-Ultimo cambio: 2026/11/13
+
+_Ultimo cambio: 2026/11/13_
 
 [About](about.md)
