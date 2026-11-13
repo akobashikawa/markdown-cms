@@ -72,8 +72,8 @@ const App = {
         const pollingInterval = ref(null);
         const retryPageName = ref(''); // Store page name to retry after OAuth
 
-        // Computed property for authentication state
-        const isAuthenticated = () => !!config.github.token;
+        // Reactive authentication state (config is not reactive, so track it explicitly)
+        const isAuthenticated = ref(!!config.github.token);
 
         const loadPage = async (pageName) => {
             currentPage.value = pageName || 'index';
@@ -228,6 +228,7 @@ const App = {
             config.github.token = token;
             localStorage.setItem('github_token', token);
             accessToken.value = token;
+            isAuthenticated.value = true;
             showOAuthFlow.value = false;
             
             // Retry loading the page after successful authentication
@@ -238,6 +239,12 @@ const App = {
             config.github.token = '';
             localStorage.removeItem('github_token');
             accessToken.value = '';
+            isAuthenticated.value = false;
+            oauthError.value = '';
+            stopPolling();
+            showOAuthFlow.value = false;
+            showEditForm.value = false;
+            newContent.value = '';
         };
 
         const saveContent = async () => {
@@ -310,6 +317,7 @@ const App = {
             if (token) {
                 localStorage.setItem('github_token', token);
                 config.github.token = token;
+                isAuthenticated.value = true;
                 loadPage('index');
             }
         };
