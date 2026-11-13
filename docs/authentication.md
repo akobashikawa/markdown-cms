@@ -79,7 +79,7 @@ Todas requieren una pieza fuera de GitHub Pages:
    - `/login` redirige a `github.com/login/oauth/authorize`.
    - `/callback` canjea el `code` con el `client_secret` (guardado como variable de entorno) y devuelve el token al navegador, por ejemplo con `postMessage`.
    - Ventaja: botón real de un clic. Coste: una cuenta/servicio extra y mantener la callback URL.
-2. **GitHub App con proxy**: permisos finos y tokens de corta duración por instalación. Más configuración.
+2. **GitHub App con proxy**: permisos finos y tokens de corta duración por instalación. Más configuración. Detalle de esta opción en [Opción futura: GitHub App + proxy OAuth](#opción-futura-github-app--proxy-oauth).
 3. **Proveedor OAuth de terceros**: es lo que usan CMS estáticos como Decap CMS, que mantienen su propio servicio de OAuth por este mismo motivo.
 4. **PAT con guía**: sin infraestructura, pero requiere que el usuario cree un token.
 
@@ -110,6 +110,89 @@ Alternativas descartadas:
 - Instalar una GitHub App: permitiría preseleccionar el repositorio, pero necesita backend para el canje OAuth (ver arriba).
 
 Mitigación aplicada: el paso de **Repository access** se muestra resaltado, con el nombre `owner/repo` y un botón de copiado, y se advierte de que GitHub abre esa página con "All repositories".
+
+## Opción futura: GitHub App + proxy OAuth
+
+Documentada para valorarla más adelante. **No está implementada**: el sitio sigue usando el PAT guiado, que no necesita infraestructura. Esta opción solo merece la pena si habrá editores no técnicos y se acepta mantener un servicio pequeño fuera de GitHub Pages.
+
+### Qué mejora respecto al PAT
+
+- Un botón **"Login with GitHub"** real: el usuario autoriza y vuelve a la app, sin crear ni copiar tokens.
+- El token es **user-to-server de una GitHub App**, caduca en 8 horas y se puede renovar con un `refresh_token`; no hay tokens de larga duración guardados.
+- Los permisos se limitan **por instalación**: la app solo recibe acceso a los repositorios seleccionados al instalarla. GitHub aplica ese límite en el servidor, no en la interfaz.
+- Si el usuario ya tiene la app instalada, el login es un solo clic; si no, pasa por la pantalla de instalación una única vez.
+- El administrador puede revocar la instalación y con ella todos los tokens.
+
+### Lo que sigue sin poder preseleccionarse
+
+La pantalla `https://github.com/apps/<app>/installations/new` **también exige elegir All repositories / Only select repositories a mano**; no hay parámetro de URL para marcar la casilla del repositorio. La diferencia es que ese paso ocurre una sola vez por usuario, no en cada creación de token, y a partir de ahí el token no puede exceder lo instalado. Si se quiere restringir más, se instala la app solo en ese repositorio desde una cuenta administradora y se comparte el acceso.
+
+### Arquitectura
+
+```text
+Navegador (GitHub Pages)
+   │  1. clic en "Login with GitHub"
+   ▼
+Proxy OAuth (Cloudflare Worker / Netlify Function / Vercel Function)
+   │  2. redirect a github.com/login/oauth/authorize?client_id=...
+   ▼
+GitHub  3. usuario autoriza (o instala la app)
+   │  4. redirect a https://<proxy>/callback?code=...&state=...
+   ▼
+Proxy   5. POST https://github.com/login/oauth/access_token
+           client_id + client_secret + code   ← el secreto vive solo aquí
+   │  6. devuelve el token al navegador (postMessage) y cierra el popup
+   ▼
+Navegador 7. llama a api.github.com con el token
+```
+
+El `client_secret` nunca llega al frontend: solo está como variable de entorno del proxy. El `client_id` sí es público.
+
+### Flujo detallado
+
+1. La app abre un popup con `https://<proxy>/login?redirect=<origen>` y guarda un `state` aleatorio en `sessionStorage`.
+2. El proxy valida el `redirect` contra una lista blanca, genera su propio `state` y redirige a `https://github.com/login/oauth/authorize?client_id=<id>&state=<state>&redirect_uri=https://<proxy>/callback`.
+3. GitHub pide autorización (y, la primera vez, instalación de la app).
+4. GitHub redirige a `https://<proxy>/callback?code=...&state=...`; el proxy comprueba el `state` y canjea el `code`:
+
+   ```http
+   POST https://github.com/login/oauth/access_token
+   Accept: application/json
+   Content-Type: application/json
+   ```
+
+   ```json
+   { "client_id": "...", "client_secret": "...", "code": "..." }
+   ```
+
+5. El proxy responde con una página mínima que hace `window.opener.postMessage({ token, expires }, origenPermitido)` y se cierra. El frontend valida `event.origin`, guarda el token en `localStorage` y recarga.
+6. Para renovar, el proxy expone `POST /refresh` con el `refresh_token`; así el token de 8 horas no obliga a volver a autorizar.
+
+### Configuración necesaria
+
+- **GitHub App** (Settings → Developer settings → GitHub Apps):
+  - Permisos de repositorio: **Contents: Read and write**. Nada más.
+  - "Expire user authorization tokens": activado (habilita `refresh_token`).
+  - Callback URL: `https://<proxy>/callback`.
+  - Instalación limitada al repositorio del CMS.
+- **Proxy**: dos rutas (`/login`, `/callback`) y, opcionalmente, `/refresh`. Variables de entorno `CLIENT_ID`, `CLIENT_SECRET`, `ALLOWED_ORIGIN`. ~50 líneas por ruta; los planes gratuitos de Workers/Functions son suficientes.
+- **Frontend**: `js/config.js` gana `authProxyUrl`; `App.js` sustituye el modal de token por el botón que abre el popup, manteniendo el PAT como alternativa si el proxy falla.
+
+### Riesgos y costes
+
+- Una cuenta y un despliegue más que mantener; si el proxy cae, no hay login (por eso conviene conservar el PAT como respaldo).
+- El token sigue llegando al navegador: el riesgo de XSS es el mismo que con el PAT. Para eliminarlo habría que proxyar también las escrituras a la API.
+- El `state` y la lista blanca de `redirect` son obligatorios: sin ellos el proxy se convierte en un emisor de tokens para cualquier sitio.
+- GitHub puede exigir verificación de la app si se distribuye a terceros.
+- Referencias: [autorización de GitHub Apps](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/about-authentication-with-a-github-app), [renovación de tokens de usuario](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/refreshing-user-access-tokens), [instalación de apps](https://docs.github.com/en/apps/using-github-apps/installing-a-github-app-from-a-third-party).
+
+### Cuándo adoptarla
+
+- Hay más de una persona editando y ninguna quiere crear un PAT.
+- Se quiere revocar accesos sin depender de que cada usuario borre su token.
+- Se acepta mantener el proxy y su secreto.
+
+Mientras sea un único editor, el PAT guiado sigue siendo la opción con menos piezas y menos riesgo operativo.
 
 ## Seguridad
 
