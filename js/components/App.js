@@ -108,7 +108,7 @@ const App = {
         </div>
 
         <footer>
-            <em><a href="https://github.com/akobashikawa/github-cms-101" target="_blank">@GitHub</a></em>
+            <em><a :href="config.github.webUrl" target="_blank" rel="noopener">{{ config.github.owner }}/{{ config.github.repo }}</a></em>
         </footer>
     </div>
     `,
@@ -139,7 +139,7 @@ const App = {
         // "Contents: write" pre-filled. The user still picks the repository.
         const tokenPrefillUrl = (() => {
             const params = new URLSearchParams({
-                name: 'GitHub CMS',
+                name: config.site.name,
                 description: `Edit content of ${config.github.owner}/${config.github.repo}`,
                 expires_in: '90',
                 contents: 'write'

@@ -1,4 +1,4 @@
-# Acerca de GitHub CMS
+# Acerca de Markdown CMS
 
 A simple CMS (Content Management System) that uses GitHub's infrastructure for deployment and publishing.
 

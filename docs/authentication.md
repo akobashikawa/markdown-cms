@@ -1,4 +1,4 @@
-# Autenticación en GitHub CMS 101
+# Autenticación en Markdown CMS
 
 Este documento explica por qué el sitio no puede ofrecer un botón de "Login with GitHub" basado en OAuth sin añadir un backend, y qué alternativa usa la aplicación. Está dirigido a quien mantenga el proyecto.
 

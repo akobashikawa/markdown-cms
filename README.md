@@ -1,4 +1,4 @@
-# GitHub CMS 101
+# Markdown CMS
 
 A simple CMS (Content Management System) that uses GitHub's infrastructure for deployment and publishing.
 
@@ -25,6 +25,17 @@ A simple CMS (Content Management System) that uses GitHub's infrastructure for d
 - Markdown pages live in `pages/`. Hash routes map to files: `#/about` renders `pages/about.md`, while `#/` renders `pages/index.md`.
 - Reading uses the GitHub Contents API. Saving commits directly to the configured branch.
 - If a page does not exist, authenticated users get an empty editor to create it.
+
+## Configuration
+
+Everything user-visible is derived from `js/config.js`:
+
+- `site.name` sets the browser tab title and the token name suggested during login.
+- `site.description` is the intended source for the page description (also in `index.html` as a static fallback).
+- `github.owner`, `github.repo` and `github.branch` drive the API calls, the footer link and the pre-filled token description.
+- `github.webUrl` and `github.pagesUrl` are derived automatically, so renaming the repository only requires changing `github.repo`.
+
+Static places that still need a manual edit when renaming: `index.html` (`<title>`/meta fallback), `README.md`, `pages/*.md`, `docs/` and `AGENTS.md`.
 
 ## Local development
 

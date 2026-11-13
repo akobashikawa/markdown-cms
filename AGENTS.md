@@ -18,6 +18,6 @@ No-build Vue 3 SPA that reads and writes Markdown in `pages/` through the GitHub
 - The login modal pre-fills a fine-grained token URL (`contents=write`, 90 days) and validates it against `/repos/{owner}/{repo}` (`permissions.push`) and `/user`. GitHub's template URL has no parameter for repository access, so the modal highlights the manual "Only select repositories" step; don't add speculative query params.
 - A 401 with a stored token drops the token and retries anonymously; a private repo then shows the login prompt. 403 is reported as an access/rate-limit error. A 404 opens the editor for authenticated users, otherwise shows "Page not found".
 - UTF-8 round-trips through `btoa(unescape(encodeURIComponent(...)))` and `decodeURIComponent(escape(atob(...)))`; keep both sides paired or non-ASCII content breaks.
-- `js/config.js` hardcodes owner/repo/branch; repoint them to use another repository. The token is restored from `localStorage`.
+- `js/config.js` centralizes the name (`site.name`), owner/repo/branch and derives `webUrl`/`pagesUrl`; a repo rename only needs `github.repo` there. The token is restored from `localStorage`.
 - `js/marked-config.js` rewrites internal Markdown links to `#/...` and strips `.md`; external links open in a new tab.
 - `pages/*.md` is published CMS content while `README.md` is only repo documentation. Editing one does not update the other.
