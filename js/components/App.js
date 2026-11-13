@@ -31,9 +31,14 @@ const App = {
         </div>
 
         <div v-else-if="!showEditForm">
-            <div v-if="loading" class="loading">Loading...</div>
+            <div v-if="authRequired" class="oauth-flow">
+                <h2>Authentication required</h2>
+                <p>This repository requires a GitHub login to read its content.</p>
+                <button @click="loginWithGitHub" class="btn">Login with GitHub</button>
+            </div>
+            <div v-else-if="loading" class="loading">Loading...</div>
             <div v-else v-html="content"></div>
-            <div v-if="isAuthenticated && !loading" class="mt-2">
+            <div v-if="isAuthenticated && !loading && !authRequired" class="mt-2">
                 <button @click="editContent" class="btn">Edit</button>
             </div>
         </div>
@@ -74,10 +79,12 @@ const App = {
 
         // Reactive authentication state (config is not reactive, so track it explicitly)
         const isAuthenticated = ref(!!config.github.token);
+        const authRequired = ref(false);
 
         const loadPage = async (pageName) => {
             currentPage.value = pageName || 'index';
             loading.value = true;
+            authRequired.value = false;
             retryPageName.value = pageName || 'index';
             
             try {
@@ -100,10 +107,19 @@ const App = {
                 if (error.response) {
                     const status = error.response.status;
                     
-                    // Authentication errors - trigger OAuth flow
-                    if (status === 401 || status === 403) {
-                        console.log('Authentication failed, starting OAuth flow...');
-                        loginWithGitHub();
+                    // Missing/invalid credentials: require an explicit login action
+                    // instead of auto-starting OAuth (otherwise logout appears broken).
+                    if (status === 401) {
+                        authRequired.value = true;
+                        content.value = '';
+                        return;
+                    }
+
+                    // 403 is not an auth-only signal: it can be a rate limit or
+                    // missing token permissions, so do not launch the OAuth flow.
+                    if (status === 403) {
+                        console.error('Access denied loading content:', error);
+                        content.value = 'Access denied. Check that your token has content permissions and that the API rate limit has not been reached.';
                         return;
                     }
                     
@@ -333,6 +349,7 @@ const App = {
             currentPage,
             config,
             isAuthenticated,
+            authRequired,
             showOAuthFlow,
             userCode,
             verificationUri,
