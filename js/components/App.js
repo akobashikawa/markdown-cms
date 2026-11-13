@@ -1,8 +1,23 @@
-import { ref, watch, onMounted } from 'vue';
+import { ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import axios from 'axios';
 import { marked } from '../marked-config.js';
 import config from '../config.js';
+
+const repoUrl = (path = '') =>
+    `https://api.github.com/repos/${config.github.owner}/${config.github.repo}${path}`;
+
+const contentsUrl = (page) => repoUrl(`/contents/pages/${page}.md`);
+
+// Only send credentials when a token is stored: an empty "Authorization: token"
+// header makes GitHub answer 401 even for public repositories.
+const githubHeaders = () => {
+    const headers = { 'Accept': 'application/vnd.github.v3+json' };
+    if (config.github.token) {
+        headers.Authorization = `token ${config.github.token}`;
+    }
+    return headers;
+};
 
 const App = {
     template: `
@@ -12,33 +27,45 @@ const App = {
             <router-link to="/about">About</router-link>
             
             <span v-if="!isAuthenticated">
-                | <a href="#" @click.prevent="loginWithGitHub">Login with GitHub</a>
+                | <button type="button" class="link-button" @click="openTokenForm">Login with GitHub</button>
             </span>
             <span v-else>
-                | <a href="#" @click.prevent="logout">Logout</a>
+                | <button type="button" class="link-button" @click="logout">Logout</button>
             </span>
         </nav>
 
-        <!-- OAuth Device Flow UI -->
-        <div v-if="showOAuthFlow" class="oauth-flow">
-            <h2>Login with GitHub</h2>
-            <p>Please visit <a :href="verificationUri" target="_blank">{{ verificationUri }}</a> and enter the code:</p>
-            <div class="code-display">{{ userCode }}</div>
-            <p v-if="!accessToken" class="polling">Verifying...
-                <span v-if="oauthError" class="error">{{ oauthError }}</span>
+        <div v-if="showTokenForm" class="login-box">
+            <h2>Login with a GitHub token</h2>
+            <p>
+                Create a
+                <a href="https://github.com/settings/tokens?type=beta" target="_blank">fine-grained token</a>
+                with <strong>Contents: Read and write</strong> access to this repository.
             </p>
-            <p v-else class="success">Authentication successful! Loading content...</p>
+            <input
+                type="password"
+                v-model="tokenInput"
+                class="form-control"
+                placeholder="github_pat_..."
+                @keyup.enter="saveToken">
+            <p v-if="tokenError" class="error">{{ tokenError }}</p>
+            <div class="mt-2">
+                <button @click="saveToken" class="btn" :disabled="savingToken">
+                    {{ savingToken ? 'Checking...' : 'Save token' }}
+                </button>
+                <button @click="cancelTokenForm" class="btn">Cancel</button>
+            </div>
+        </div>
+
+        <div v-else-if="authRequired" class="login-box">
+            <h2>Authentication required</h2>
+            <p>This repository is private or the stored token has expired. Log in to read its content.</p>
+            <button @click="openTokenForm" class="btn">Login with GitHub</button>
         </div>
 
         <div v-else-if="!showEditForm">
-            <div v-if="authRequired" class="oauth-flow">
-                <h2>Authentication required</h2>
-                <p>This repository requires a GitHub login to read its content.</p>
-                <button @click="loginWithGitHub" class="btn">Login with GitHub</button>
-            </div>
-            <div v-else-if="loading" class="loading">Loading...</div>
+            <div v-if="loading" class="loading">Loading...</div>
             <div v-else v-html="content"></div>
-            <div v-if="isAuthenticated && !loading && !authRequired" class="mt-2">
+            <div v-if="isAuthenticated && !loading" class="mt-2">
                 <button @click="editContent" class="btn">Edit</button>
             </div>
         </div>
@@ -66,201 +93,157 @@ const App = {
         const currentPage = ref('');
         const rawContent = ref('');
         const loading = ref(false);
-        
-        // OAuth Device Flow state
-        const showOAuthFlow = ref(false);
-        const userCode = ref('');
-        const verificationUri = ref('https://github.com/login/device');
-        const deviceCode = ref('');
-        const accessToken = ref('');
-        const oauthError = ref('');
-        const pollingInterval = ref(null);
-        const retryPageName = ref(''); // Store page name to retry after OAuth
 
         // Reactive authentication state (config is not reactive, so track it explicitly)
         const isAuthenticated = ref(!!config.github.token);
         const authRequired = ref(false);
 
+        // Token login form state
+        const showTokenForm = ref(false);
+        const tokenInput = ref('');
+        const tokenError = ref('');
+        const savingToken = ref(false);
+
         const loadPage = async (pageName) => {
             currentPage.value = pageName || 'index';
             loading.value = true;
             authRequired.value = false;
-            retryPageName.value = pageName || 'index';
-            
+
             try {
-                const response = await axios.get(
-                    `https://api.github.com/repos/${config.github.owner}/${config.github.repo}/contents/pages/${currentPage.value}.md`,
-                    {
-                        headers: { 
-                            'Authorization': `token ${config.github.token}`,
-                            'Accept': 'application/vnd.github.v3+json'
-                        }
-                    }
-                );
-                
+                const response = await axios.get(contentsUrl(currentPage.value), {
+                    headers: githubHeaders()
+                });
+
                 // Decodificar correctamente el contenido base64
                 const decodedContent = decodeURIComponent(escape(atob(response.data.content)));
                 rawContent.value = decodedContent;
                 content.value = marked(decodedContent);
                 showEditForm.value = false;
             } catch (error) {
-                if (error.response) {
-                    const status = error.response.status;
-                    
-                    // Missing/invalid credentials: require an explicit login action
-                    // instead of auto-starting OAuth (otherwise logout appears broken).
-                    if (status === 401) {
-                        authRequired.value = true;
-                        content.value = '';
-                        return;
-                    }
-
-                    // 403 is not an auth-only signal: it can be a rate limit or
-                    // missing token permissions, so do not launch the OAuth flow.
-                    if (status === 403) {
-                        console.error('Access denied loading content:', error);
-                        content.value = 'Access denied. Check that your token has content permissions and that the API rate limit has not been reached.';
-                        return;
-                    }
-                    
-                    // Page not found - show edit form to create new page
-                    if (status === 404) {
-                        showEditForm.value = true;
-                        newContent.value = '';
-                        rawContent.value = '';
-                    } else {
-                        console.error('Error loading content:', error);
-                        content.value = 'Error loading content';
-                    }
-                } else {
+                if (!error.response) {
                     console.error('Error loading content:', error);
                     content.value = 'Error loading content';
+                    return;
                 }
+
+                const status = error.response.status;
+
+                // Stored token is invalid/expired: drop it and retry anonymously.
+                if (status === 401 && config.github.token) {
+                    config.github.token = '';
+                    localStorage.removeItem('github_token');
+                    isAuthenticated.value = false;
+                    return loadPage(currentPage.value);
+                }
+
+                // Unauthenticated 401 means the repository requires a login.
+                if (status === 401) {
+                    authRequired.value = true;
+                    content.value = '';
+                    return;
+                }
+
+                // 403 is not an auth-only signal: it can be a rate limit or
+                // missing token permissions.
+                if (status === 403) {
+                    console.error('Access denied loading content:', error);
+                    content.value = 'Access denied. Check that your token has content permissions and that the API rate limit has not been reached.';
+                    return;
+                }
+
+                // Page not found - authenticated users get an editor to create it.
+                if (status === 404) {
+                    rawContent.value = '';
+                    if (isAuthenticated.value) {
+                        showEditForm.value = true;
+                        newContent.value = '';
+                    } else {
+                        content.value = 'Page not found. If this repository is private, log in with a GitHub token.';
+                    }
+                    return;
+                }
+
+                console.error('Error loading content:', error);
+                content.value = 'Error loading content';
             } finally {
                 loading.value = false;
             }
         };
 
         watch(
-            () => route.params.page,
-            (newPage) => {
-                loadPage(newPage);
+            // Normalize the optional route param so the initial route object
+            // (undefined) and the resolved route ('') don't both trigger a load.
+            () => route.params.page || 'index',
+            (page) => {
+                loadPage(page);
             },
             { immediate: true }
         );
 
-        // OAuth Device Flow Methods
-        const loginWithGitHub = async () => {
-            if (!config.github.oauthClientId) {
-                alert('Please configure your OAuth Client ID in js/config.js');
+        const openTokenForm = () => {
+            tokenInput.value = '';
+            tokenError.value = '';
+            showTokenForm.value = true;
+        };
+
+        const cancelTokenForm = () => {
+            showTokenForm.value = false;
+            tokenInput.value = '';
+            tokenError.value = '';
+        };
+
+        const saveToken = async () => {
+            const token = tokenInput.value.trim();
+            if (!token) {
+                tokenError.value = 'Enter a GitHub token';
                 return;
             }
-            
-            try {
-                // Step 1: Request device code
-                const codeResponse = await axios.post(
-                    'https://github.com/login/oauth/device/code',
-                    new URLSearchParams({
-                        client_id: config.github.oauthClientId,
-                        scope: config.github.oauthScopes
-                    }),
-                    {
-                        headers: { 'Accept': 'application/json' }
-                    }
-                );
-                
-                const { user_code, device_code, verification_uri, expires_in, interval } = codeResponse.data;
-                
-                userCode.value = user_code;
-                verificationUri.value = verification_uri;
-                deviceCode.value = device_code;
-                showOAuthFlow.value = true;
-                oauthError.value = '';
-                
-                // Step 2: Poll for access token
-                startPolling(device_code, interval, expires_in);
-                
-            } catch (error) {
-                console.error('Error starting OAuth flow:', error);
-                oauthError.value = 'Failed to start authentication';
-            }
-        };
 
-        const startPolling = (deviceCode, interval, expiresIn) => {
-            const startTime = Date.now();
-            const expiresAt = startTime + (expiresIn * 1000);
-            
-            pollingInterval.value = setInterval(async () => {
-                // Check if expired
-                if (Date.now() > expiresAt) {
-                    stopPolling();
-                    oauthError.value = 'Authentication timed out. Please try again.';
+            savingToken.value = true;
+            tokenError.value = '';
+
+            try {
+                // Validate the token and check that it can write to the repository.
+                const response = await axios.get(repoUrl(), {
+                    headers: {
+                        'Authorization': `token ${token}`,
+                        'Accept': 'application/vnd.github.v3+json'
+                    }
+                });
+
+                if (response.data.permissions && !response.data.permissions.push) {
+                    tokenError.value = 'This token does not have write access to the repository';
                     return;
                 }
-                
-                try {
-                    const tokenResponse = await axios.post(
-                        'https://github.com/login/oauth/access_token',
-                        new URLSearchParams({
-                            client_id: config.github.oauthClientId,
-                            device_code: deviceCode,
-                            grant_type: 'urn:ietf:params:oauth:grant-type:device_code'
-                        }),
-                        {
-                            headers: { 'Accept': 'application/json' }
-                        }
-                    );
-                    
-                    const { access_token, error } = tokenResponse.data;
-                    
-                    if (access_token) {
-                        stopPolling();
-                        handleAuthSuccess(access_token);
-                    } else if (error === 'authorization_pending') {
-                        // Continue polling
-                    } else if (error === 'slow_down') {
-                        // Increase interval
-                        clearInterval(pollingInterval.value);
-                        const newInterval = interval * 2;
-                        startPolling(deviceCode, newInterval, expiresIn);
-                    } else {
-                        stopPolling();
-                        oauthError.value = error || 'Authentication failed';
-                    }
-                } catch (error) {
-                    console.error('Polling error:', error);
-                }
-            }, (interval || 5) * 1000);
-        };
 
-        const stopPolling = () => {
-            if (pollingInterval.value) {
-                clearInterval(pollingInterval.value);
-                pollingInterval.value = null;
+                config.github.token = token;
+                localStorage.setItem('github_token', token);
+                isAuthenticated.value = true;
+                showTokenForm.value = false;
+                tokenInput.value = '';
+                authRequired.value = false;
+                loadPage(currentPage.value || 'index');
+            } catch (error) {
+                tokenError.value = error.response && error.response.status === 401
+                    ? 'Invalid or expired token'
+                    : 'Could not validate the token';
+            } finally {
+                savingToken.value = false;
             }
-        };
-
-        const handleAuthSuccess = (token) => {
-            config.github.token = token;
-            localStorage.setItem('github_token', token);
-            accessToken.value = token;
-            isAuthenticated.value = true;
-            showOAuthFlow.value = false;
-            
-            // Retry loading the page after successful authentication
-            loadPage(retryPageName.value);
         };
 
         const logout = () => {
             config.github.token = '';
             localStorage.removeItem('github_token');
-            accessToken.value = '';
             isAuthenticated.value = false;
-            oauthError.value = '';
-            stopPolling();
-            showOAuthFlow.value = false;
+            showTokenForm.value = false;
             showEditForm.value = false;
             newContent.value = '';
+            tokenInput.value = '';
+            tokenError.value = '';
+
+            // Reload so a private repository stops showing protected content.
+            loadPage(currentPage.value || 'index');
         };
 
         const saveContent = async () => {
@@ -270,15 +253,9 @@ const App = {
 
                 // Intentar obtener el sha del archivo si existe
                 try {
-                    const fileResponse = await axios.get(
-                        `https://api.github.com/repos/${config.github.owner}/${config.github.repo}/contents/pages/${currentPage.value}.md`,
-                        {
-                            headers: { 
-                                'Authorization': `token ${config.github.token}`,
-                                'Accept': 'application/vnd.github.v3+json'
-                            }
-                        }
-                    );
+                    const fileResponse = await axios.get(contentsUrl(currentPage.value), {
+                        headers: githubHeaders()
+                    });
                     sha = fileResponse.data.sha;
                 } catch (error) {
                     // El archivo no existe, es una creación nueva
@@ -298,23 +275,24 @@ const App = {
                 }
                         
                 // Commit a la rama principal
-                await axios.put(
-                    `https://api.github.com/repos/${config.github.owner}/${config.github.repo}/contents/pages/${currentPage.value}.md`,
-                    payload,
-                    {
-                        headers: { 
-                            'Authorization': `token ${config.github.token}`,
-                            'Accept': 'application/vnd.github.v3+json'
-                        }
-                    }
-                );
+                await axios.put(contentsUrl(currentPage.value), payload, {
+                    headers: githubHeaders()
+                });
 
                 content.value = marked(newContent.value);
                 showEditForm.value = false;
                 
             } catch (error) {
                 console.error('Error saving content:', error);
-                alert('Error saving content');
+                if (error.response && error.response.status === 401) {
+                    config.github.token = '';
+                    localStorage.removeItem('github_token');
+                    isAuthenticated.value = false;
+                    alert('Your session expired. Please log in again.');
+                    openTokenForm();
+                } else {
+                    alert('Error saving content');
+                }
             }
         };
 
@@ -328,40 +306,25 @@ const App = {
             newContent.value = '';
         };
 
-        const setupToken = () => {
-            const token = prompt('Enter your GitHub Fine-grained Access Token:');
-            if (token) {
-                localStorage.setItem('github_token', token);
-                config.github.token = token;
-                isAuthenticated.value = true;
-                loadPage('index');
-            }
-        };
-
-        onMounted(() => {
-            loadPage('index');
-        });
-
         return {
             content,
             showEditForm,
             newContent,
             currentPage,
-            config,
             isAuthenticated,
             authRequired,
-            showOAuthFlow,
-            userCode,
-            verificationUri,
-            accessToken,
-            oauthError,
+            showTokenForm,
+            tokenInput,
+            tokenError,
+            savingToken,
             loading,
-            loginWithGitHub,
+            openTokenForm,
+            cancelTokenForm,
+            saveToken,
             logout,
             saveContent,
             editContent,
-            cancelEdit,
-            setupToken
+            cancelEdit
         }
     },
 };

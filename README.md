@@ -5,7 +5,7 @@ A simple CMS (Content Management System) that uses GitHub's infrastructure for d
 ## Features
 
 - Uses GitHub as content backend
-- No server required (static hosting)
+- No server required (static hosting, works on GitHub Pages)
 - Markdown content
 - Edit content directly from the web interface
 - Authentication via GitHub token
@@ -17,48 +17,39 @@ A simple CMS (Content Management System) that uses GitHub's infrastructure for d
 - Vue Router
 - Marked (for Markdown parsing)
 - Matcha CSS
-- GitHub API
+- GitHub Contents API
 
-## Setup
+## How it works
 
-### Option 1: OAuth Device Flow (Recommended)
+- There is no build step: `index.html` loads Vue, Vue Router, axios and marked from CDNs through an import map.
+- Markdown pages live in `pages/`. Hash routes map to files: `#/about` renders `pages/about.md`, while `#/` renders `pages/index.md`.
+- Reading uses the GitHub Contents API. Saving commits directly to the configured branch.
+- If a page does not exist, authenticated users get an empty editor to create it.
 
-1. Register a new OAuth App at [GitHub Developer Settings](https://github.com/settings/developers):
-   - **Application name**: GitHub CMS
-   - **Homepage URL**: `http://localhost:5500` (or your local server URL)
-   - **Authorization callback URL**: Not required for Device Flow
-   - **Device flow**: Enable this option
-2. Copy the **Client ID** from your OAuth App settings
-3. Open `js/config.js` and set your OAuth Client ID:
-   ```javascript
-oauthClientId: 'your-client-id-here',
-   ```
-4. Open `index.html` in a browser
-5. Click "Login with GitHub" and follow the on-screen instructions
-
-### Option 2: Manual PAT (Legacy)
-
-1. Create a Fine-grained Personal Access Token in GitHub with:
-   - Repository access: Select this repository
-   - Permissions: Read and write access to content
-2. Open `index.html` in a browser
-3. Click "Setup Token" and enter your token
-
-## Usage
-
-- Navigate using the menu links
-- Click "Login with GitHub" to authenticate
-- Click "Edit" to modify content (requires authentication)
-- Content is saved as Markdown files in the `pages/` directory
-- All changes are committed directly to the repository
-- Click "Logout" to clear your authentication
-
-## Development
+## Local development
 
 ```bash
-git clone https://github.com/akobashikawa/github-cms-101.git
-cd github-cms-101
+python3 -m http.server 5500
 ```
+
+Open <http://localhost:5500/>. A local HTTP server is required: ES modules and import maps do not work from `file://`.
+
+## Authentication
+
+Editing requires a GitHub token with **Contents: Read and write** access to this repository:
+
+1. Create a [fine-grained token](https://github.com/settings/tokens?type=beta) scoped to this repository.
+2. Click **Login with GitHub**, paste the token and save it. It is kept in `localStorage` as `github_token`.
+
+The OAuth device flow cannot be used from a browser: GitHub does not send CORS headers for `github.com/login/device/code`.
+
+## Deploy on GitHub Pages
+
+1. Push the repository to GitHub.
+2. In **Settings → Pages**, deploy from the `master` branch, root folder.
+3. Update `js/config.js` (`owner`, `repo` and `branch`) to point at your repository.
+
+Hash routing means no extra 404 fallback is needed on GitHub Pages.
 
 ## License
 

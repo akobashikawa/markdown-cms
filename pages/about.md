@@ -22,16 +22,14 @@ A simple CMS (Content Management System) that uses GitHub's infrastructure for d
 ## Setup
 
 1. Clone this repository
-2. Create a Fine-grained Personal Access Token in GitHub with:
-   - Repository access: Select this repository
-   - Permissions: Read and write access to content
-3. Open `index.html` in a browser
-4. Click "Setup Token" and enter your token
+2. Create a GitHub token with **Contents: Read and write** access to this repository
+3. Serve the site over HTTP (`python3 -m http.server 5500`) or publish it with GitHub Pages
+4. Click "Login with GitHub" and paste the token
 
 ## Usage
 
 - Navigate using the menu links
-- Click "Edit" to modify content (requires token)
+- Click "Edit" to modify content (requires a token)
 - Content is saved as Markdown files in the `pages/` directory
 - All changes are committed directly to the repository
 
