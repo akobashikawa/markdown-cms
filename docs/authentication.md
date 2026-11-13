@@ -90,13 +90,26 @@ En todos los casos el token termina en el navegador si la app llama directamente
 La aplicación usa un token fine-grained con permiso **Contents: Read and write**:
 
 - El modal de login enlaza a la creación de token con estos parámetros prellenados: `name`, `description`, `target_name`, `expires_in` y `contents=write`.
-- El usuario solo elige **Only select repositories** y el repositorio.
+- El usuario debe elegir manualmente **Only select repositories** y el repositorio (ver limitación más abajo).
+- El modal resalta ese paso y ofrece un botón **Copy** con `owner/repo` para pegarlo en el buscador de repositorios de GitHub.
 - Al guardar, `js/components/App.js` valida con dos peticiones:
   - `GET /repos/{owner}/{repo}`: comprueba que el token llega al repositorio y que `permissions.push` es `true`.
   - `GET /user`: obtiene el login que se muestra en la cabecera.
 - Se guarda en `localStorage`: `github_token`, `github_user` y, si GitHub la informa, `github_token_expires`.
 - Si una petición devuelve `401`, el token se descarta y se reintenta la lectura sin credenciales. Si el repositorio es privado, se muestra el aviso de login.
 - `Logout` limpia el token y recarga la página.
+
+### Limitación: acceso a repositorios
+
+La URL de plantilla de GitHub (`/settings/personal-access-tokens/new`) solo admite los parámetros documentados `name`, `description`, `target_name`, `expires_in` y los de permisos (`contents`, `issues`, …). **No existe un parámetro documentado para el tipo de acceso ni para la lista de repositorios**, así que la página siempre se abre con **All repositories** seleccionado.
+
+Alternativas descartadas:
+
+- Añadir parámetros no documentados (por ejemplo `repositories[]=`): GitHub los ignora y podrían cambiar sin aviso; no es fiable.
+- Crear el token vía API (`POST /user/personal-access-tokens`): requiere un token con permisos de administración, lo que exige otro PAT y anula la ventaja de seguridad.
+- Instalar una GitHub App: permitiría preseleccionar el repositorio, pero necesita backend para el canje OAuth (ver arriba).
+
+Mitigación aplicada: el paso de **Repository access** se muestra resaltado, con el nombre `owner/repo` y un botón de copiado, y se advierte de que GitHub abre esa página con "All repositories".
 
 ## Seguridad
 

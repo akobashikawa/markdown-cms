@@ -15,7 +15,7 @@ No-build Vue 3 SPA that reads and writes Markdown in `pages/` through the GitHub
 - Omit the `Authorization` header when no token is stored: `Authorization: token ` (empty) makes GitHub return 401 even for public repositories.
 - Reads use `api.github.com/repos/<owner>/<repo>/contents/pages/<page>.md`; saving fetches the SHA, then PUTs a commit straight to `master`. There is no PR/branch workflow.
 - Browser OAuth is not viable: the web flow requires a `client_secret`, and the device flow is blocked by CORS on `github.com/login/*`. Auth is a guided PAT modal stored in `localStorage`; see `docs/authentication.md` before changing it.
-- The login modal pre-fills a fine-grained token URL (`contents=write`, 90 days) and validates it against `/repos/{owner}/{repo}` (`permissions.push`) and `/user`.
+- The login modal pre-fills a fine-grained token URL (`contents=write`, 90 days) and validates it against `/repos/{owner}/{repo}` (`permissions.push`) and `/user`. GitHub's template URL has no parameter for repository access, so the modal highlights the manual "Only select repositories" step; don't add speculative query params.
 - A 401 with a stored token drops the token and retries anonymously; a private repo then shows the login prompt. 403 is reported as an access/rate-limit error. A 404 opens the editor for authenticated users, otherwise shows "Page not found".
 - UTF-8 round-trips through `btoa(unescape(encodeURIComponent(...)))` and `decodeURIComponent(escape(atob(...)))`; keep both sides paired or non-ASCII content breaks.
 - `js/config.js` hardcodes owner/repo/branch; repoint them to use another repository. The token is restored from `localStorage`.

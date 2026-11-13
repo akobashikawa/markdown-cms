@@ -44,13 +44,24 @@ const App = {
             </p>
             <ol class="login-steps">
                 <li>
-                    <a :href="tokenPrefillUrl" target="_blank" rel="noopener">Create a fine-grained token</a>
-                    with the name, expiration and <strong>Contents: Read and write</strong> permission pre-filled.
+                    <a :href="tokenPrefillUrl" target="_blank" rel="noopener">Open the token creation page</a>.
+                    The token name, expiration and <strong>Contents: Read and write</strong> permission are prefilled.
                 </li>
-                <li>
-                    Under <strong>Repository access</strong>, choose
-                    <strong>Only select repositories</strong> and select
+                <li class="step-emphasis">
+                    <strong>Before generating the token</strong>, go to <strong>Repository access</strong> and
+                    change <strong>All repositories</strong> to
+                    <strong>Only select repositories</strong>, then pick
                     <code>{{ config.github.repo }}</code>.
+                    <span class="copy-row">
+                        <code>{{ config.github.owner }}/{{ config.github.repo }}</code>
+                        <button type="button" class="link-button" @click="copyRepo">
+                            {{ repoCopied ? 'Copied' : 'Copy' }}
+                        </button>
+                    </span>
+                    <span class="step-hint">
+                        GitHub always opens this page with "All repositories" preselected and the link cannot
+                        change it, so this step is manual.
+                    </span>
                 </li>
                 <li>Click <strong>Generate token</strong>, copy it and paste it below.</li>
             </ol>
@@ -122,6 +133,7 @@ const App = {
         const tokenInput = ref('');
         const tokenError = ref('');
         const savingToken = ref(false);
+        const repoCopied = ref(false);
 
         // Fine-grained token creation page with name, expiration and
         // "Contents: write" pre-filled. The user still picks the repository.
@@ -227,7 +239,33 @@ const App = {
         const openTokenForm = () => {
             tokenInput.value = '';
             tokenError.value = '';
+            repoCopied.value = false;
             showTokenForm.value = true;
+        };
+
+        // GitHub's token URL cannot preselect repository access, so make the
+        // repository name easy to copy into GitHub's "Only select repositories" picker.
+        const copyRepo = async () => {
+            const text = `${config.github.owner}/${config.github.repo}`;
+            try {
+                if (navigator.clipboard && window.isSecureContext) {
+                    await navigator.clipboard.writeText(text);
+                } else {
+                    const helper = document.createElement('textarea');
+                    helper.value = text;
+                    helper.setAttribute('readonly', '');
+                    helper.style.position = 'absolute';
+                    helper.style.left = '-9999px';
+                    document.body.appendChild(helper);
+                    helper.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(helper);
+                }
+                repoCopied.value = true;
+                setTimeout(() => { repoCopied.value = false; }, 2000);
+            } catch (error) {
+                console.error('Could not copy the repository name:', error);
+            }
         };
 
         const cancelTokenForm = () => {
@@ -380,6 +418,8 @@ const App = {
             tokenError,
             savingToken,
             tokenPrefillUrl,
+            repoCopied,
+            copyRepo,
             loading,
             openTokenForm,
             cancelTokenForm,

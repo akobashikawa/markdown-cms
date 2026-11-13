@@ -38,8 +38,8 @@ Open <http://localhost:5500/>. A local HTTP server is required: ES modules and i
 
 Editing requires a GitHub token with **Contents: Read and write** access to this repository:
 
-1. Click **Login with GitHub**, then **Create a fine-grained token**. The link pre-fills the token name, expiration and Contents permission.
-2. Under **Repository access**, choose **Only select repositories** and select this repository.
+1. Click **Login with GitHub**, then **Open the token creation page**. The link pre-fills the token name, expiration and Contents permission.
+2. Under **Repository access**, change **All repositories** to **Only select repositories** and select this repository. GitHub cannot prefill this choice from the URL; the modal highlights the step and offers a copy button for `owner/repo`.
 3. Click **Generate token**, copy it, paste it into the form and save.
 
 The token is stored in `localStorage` (`github_token`); logging out clears it. See [`docs/authentication.md`](docs/authentication.md) for why OAuth cannot be used from a static site and which alternatives exist.
