@@ -30,17 +30,30 @@ const App = {
                 | <button type="button" class="link-button" @click="openTokenForm">Login with GitHub</button>
             </span>
             <span v-else>
-                | <button type="button" class="link-button" @click="logout">Logout</button>
+                | <span v-if="currentUser" class="user-badge" :title="tokenExpires ? 'Token expires: ' + tokenExpires : ''">@{{ currentUser }} &nbsp;|&nbsp; </span>
+                <button type="button" class="link-button" @click="logout">Logout</button>
             </span>
         </nav>
 
         <div v-if="showTokenForm" class="login-box">
-            <h2>Login with a GitHub token</h2>
+            <h2>Connect with GitHub</h2>
             <p>
-                Create a
-                <a href="https://github.com/settings/tokens?type=beta" target="_blank">fine-grained token</a>
-                with <strong>Contents: Read and write</strong> access to this repository.
+                Changes are committed directly to
+                <code>{{ config.github.owner }}/{{ config.github.repo }}</code>,
+                so you need a token with write access to that repository.
             </p>
+            <ol class="login-steps">
+                <li>
+                    <a :href="tokenPrefillUrl" target="_blank" rel="noopener">Create a fine-grained token</a>
+                    with the name, expiration and <strong>Contents: Read and write</strong> permission pre-filled.
+                </li>
+                <li>
+                    Under <strong>Repository access</strong>, choose
+                    <strong>Only select repositories</strong> and select
+                    <code>{{ config.github.repo }}</code>.
+                </li>
+                <li>Click <strong>Generate token</strong>, copy it and paste it below.</li>
+            </ol>
             <input
                 type="password"
                 v-model="tokenInput"
@@ -54,6 +67,10 @@ const App = {
                 </button>
                 <button @click="cancelTokenForm" class="btn">Cancel</button>
             </div>
+            <p class="login-note">
+                The token is stored only in this browser (<code>localStorage</code>).
+                You can revoke it at any time from your GitHub settings.
+            </p>
         </div>
 
         <div v-else-if="authRequired" class="login-box">
@@ -96,6 +113,8 @@ const App = {
 
         // Reactive authentication state (config is not reactive, so track it explicitly)
         const isAuthenticated = ref(!!config.github.token);
+        const currentUser = ref(config.github.user);
+        const tokenExpires = ref(config.github.tokenExpires);
         const authRequired = ref(false);
 
         // Token login form state
@@ -103,6 +122,33 @@ const App = {
         const tokenInput = ref('');
         const tokenError = ref('');
         const savingToken = ref(false);
+
+        // Fine-grained token creation page with name, expiration and
+        // "Contents: write" pre-filled. The user still picks the repository.
+        const tokenPrefillUrl = (() => {
+            const params = new URLSearchParams({
+                name: 'GitHub CMS',
+                description: `Edit content of ${config.github.owner}/${config.github.repo}`,
+                expires_in: '90',
+                contents: 'write'
+            });
+            if (config.github.owner) {
+                params.set('target_name', config.github.owner);
+            }
+            return `https://github.com/settings/personal-access-tokens/new?${params.toString()}`;
+        })();
+
+        const clearAuth = () => {
+            config.github.token = '';
+            config.github.user = '';
+            config.github.tokenExpires = '';
+            localStorage.removeItem('github_token');
+            localStorage.removeItem('github_user');
+            localStorage.removeItem('github_token_expires');
+            isAuthenticated.value = false;
+            currentUser.value = '';
+            tokenExpires.value = '';
+        };
 
         const loadPage = async (pageName) => {
             currentPage.value = pageName || 'index';
@@ -130,9 +176,7 @@ const App = {
 
                 // Stored token is invalid/expired: drop it and retry anonymously.
                 if (status === 401 && config.github.token) {
-                    config.github.token = '';
-                    localStorage.removeItem('github_token');
-                    isAuthenticated.value = false;
+                    clearAuth();
                     return loadPage(currentPage.value);
                 }
 
@@ -203,21 +247,40 @@ const App = {
             tokenError.value = '';
 
             try {
-                // Validate the token and check that it can write to the repository.
-                const response = await axios.get(repoUrl(), {
-                    headers: {
-                        'Authorization': `token ${token}`,
-                        'Accept': 'application/vnd.github.v3+json'
-                    }
-                });
+                const headers = {
+                    'Authorization': `token ${token}`,
+                    'Accept': 'application/vnd.github.v3+json'
+                };
 
-                if (response.data.permissions && !response.data.permissions.push) {
+                // Validate the token, its repository access and its write permission.
+                const [repoResponse, userResponse] = await Promise.all([
+                    axios.get(repoUrl(), { headers }),
+                    axios.get('https://api.github.com/user', { headers })
+                ]);
+
+                if (repoResponse.data.permissions && !repoResponse.data.permissions.push) {
                     tokenError.value = 'This token does not have write access to the repository';
                     return;
                 }
 
+                const expires = repoResponse.headers['github-authentication-token-expiration']
+                    || userResponse.headers['github-authentication-token-expiration']
+                    || '';
+
                 config.github.token = token;
+                config.github.user = userResponse.data.login;
+                config.github.tokenExpires = expires;
+
                 localStorage.setItem('github_token', token);
+                localStorage.setItem('github_user', config.github.user);
+                if (expires) {
+                    localStorage.setItem('github_token_expires', expires);
+                } else {
+                    localStorage.removeItem('github_token_expires');
+                }
+
+                currentUser.value = config.github.user;
+                tokenExpires.value = expires;
                 isAuthenticated.value = true;
                 showTokenForm.value = false;
                 tokenInput.value = '';
@@ -233,9 +296,7 @@ const App = {
         };
 
         const logout = () => {
-            config.github.token = '';
-            localStorage.removeItem('github_token');
-            isAuthenticated.value = false;
+            clearAuth();
             showTokenForm.value = false;
             showEditForm.value = false;
             newContent.value = '';
@@ -285,9 +346,7 @@ const App = {
             } catch (error) {
                 console.error('Error saving content:', error);
                 if (error.response && error.response.status === 401) {
-                    config.github.token = '';
-                    localStorage.removeItem('github_token');
-                    isAuthenticated.value = false;
+                    clearAuth();
                     alert('Your session expired. Please log in again.');
                     openTokenForm();
                 } else {
@@ -311,12 +370,16 @@ const App = {
             showEditForm,
             newContent,
             currentPage,
+            config,
             isAuthenticated,
+            currentUser,
+            tokenExpires,
             authRequired,
             showTokenForm,
             tokenInput,
             tokenError,
             savingToken,
+            tokenPrefillUrl,
             loading,
             openTokenForm,
             cancelTokenForm,

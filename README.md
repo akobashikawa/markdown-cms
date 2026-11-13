@@ -38,10 +38,11 @@ Open <http://localhost:5500/>. A local HTTP server is required: ES modules and i
 
 Editing requires a GitHub token with **Contents: Read and write** access to this repository:
 
-1. Create a [fine-grained token](https://github.com/settings/tokens?type=beta) scoped to this repository.
-2. Click **Login with GitHub**, paste the token and save it. It is kept in `localStorage` as `github_token`.
+1. Click **Login with GitHub**, then **Create a fine-grained token**. The link pre-fills the token name, expiration and Contents permission.
+2. Under **Repository access**, choose **Only select repositories** and select this repository.
+3. Click **Generate token**, copy it, paste it into the form and save.
 
-The OAuth device flow cannot be used from a browser: GitHub does not send CORS headers for `github.com/login/device/code`.
+The token is stored in `localStorage` (`github_token`); logging out clears it. See [`docs/authentication.md`](docs/authentication.md) for why OAuth cannot be used from a static site and which alternatives exist.
 
 ## Deploy on GitHub Pages
 
