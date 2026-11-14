@@ -1,5 +1,6 @@
-# Acerca de Markdown CMS
-
+---
+title: Acerca de Markdown CMS
+---
 A simple CMS (Content Management System) that uses GitHub's infrastructure for deployment and publishing.
 
 ## Features
@@ -43,6 +44,5 @@ cd markdown-cms
 ## License
 
 MIT
-
 
 Github: [akobashikawa/markdown-cms: Idea de CMS usando github](https://github.com/akobashikawa/markdown-cms)
